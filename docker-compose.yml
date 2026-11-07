@@ -1,26 +1,47 @@
+x-app-env: &app-env
+  SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker,mysql}
+  SPRING_DATASOURCE_URL: jdbc:mysql://${DB_HOST:-mysql-petclinic}:${DB_PORT:-3306}/${MYSQL_DATABASE:-petclinic}?${DB_PARAMS:-allowPublicKeyRetrieval=true&useSSL=false}
+  SPRING_DATASOURCE_USERNAME: ${DB_USER:-root}
+  SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?define DB_PASSWORD en .env}
+
+x-mem: &mem
+  resources:
+    limits:
+      memory: ${MEM_LIMIT:-512M}
+
 services:
+  mysql-petclinic:
+    image: ${MYSQL_IMAGE:-mysql:8.4.5}
+    container_name: mysql-petclinic
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?define MYSQL_ROOT_PASSWORD en .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-petclinic}
+    volumes:
+      - mysql-petclinic-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   config-server:
-    image: springcommunity/spring-petclinic-config-server
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-config-server:${IMAGE_TAG:-latest}
     container_name: config-server
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    deploy: *mem
     healthcheck:
       test: ["CMD", "curl", "-I", "http://config-server:8888"]
       interval: 5s
       timeout: 5s
       retries: 10
     ports:
-     - 8888:8888
+      - "${CONFIG_SERVER_PORT:-8888}:8888"
 
   discovery-server:
-    image: springcommunity/spring-petclinic-discovery-server
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-discovery-server:${IMAGE_TAG:-latest}
     container_name: discovery-server
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    deploy: *mem
     healthcheck:
       test: ["CMD", "curl", "-f", "http://discovery-server:8761"]
       interval: 5s
@@ -30,132 +51,90 @@ services:
       config-server:
         condition: service_healthy
     ports:
-     - 8761:8761
+      - "${DISCOVERY_SERVER_PORT:-8761}:8761"
 
   customers-service:
-    image: springcommunity/spring-petclinic-customers-service
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-customers-service:${IMAGE_TAG:-latest}
     container_name: customers-service
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    environment: *app-env
+    deploy: *mem
     depends_on:
       config-server:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      mysql-petclinic:
+        condition: service_healthy
     ports:
-    - 8081:8081
+      - "${CUSTOMERS_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health | grep -q UP"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
 
   visits-service:
-    image: springcommunity/spring-petclinic-visits-service
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-visits-service:${IMAGE_TAG:-latest}
     container_name: visits-service
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    environment: *app-env
+    deploy: *mem
     depends_on:
       config-server:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
+      mysql-petclinic:
+        condition: service_healthy
+      customers-service:
+        condition: service_healthy
     ports:
-     - 8082:8082
+      - "${VISITS_PORT:-8082}:8082"
 
   vets-service:
-    image: springcommunity/spring-petclinic-vets-service
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-vets-service:${IMAGE_TAG:-latest}
     container_name: vets-service
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    environment: *app-env
+    deploy: *mem
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/actuator/health | grep -q UP"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
     depends_on:
       config-server:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
-    ports:
-     - 8083:8083
-
-
-  genai-service:
-    image: springcommunity/spring-petclinic-genai-service
-    container_name: genai-service
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - AZURE_OPENAI_KEY=${AZURE_OPENAI_KEY}
-      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    depends_on:
-      config-server:
-        condition: service_healthy
-      discovery-server:
+      mysql-petclinic:
         condition: service_healthy
     ports:
-     - 8084:8084
-
+      - "${VETS_PORT:-8083}:8083"
 
   api-gateway:
-    image: springcommunity/spring-petclinic-api-gateway
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-api-gateway:${IMAGE_TAG:-latest}
     container_name: api-gateway
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    deploy: *mem
     depends_on:
       config-server:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
     ports:
-     - 8080:8080
-
-  tracing-server:
-    image: openzipkin/zipkin
-    container_name: tracing-server
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    ports:
-     - 9411:9411
+      - "${API_GATEWAY_PORT:-8080}:8080"
 
   admin-server:
-    image: springcommunity/spring-petclinic-admin-server
+    image: ${IMAGE_REGISTRY:-springcommunity}/spring-petclinic-admin-server:${IMAGE_TAG:-latest}
     container_name: admin-server
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    deploy: *mem
     depends_on:
       config-server:
         condition: service_healthy
       discovery-server:
         condition: service_healthy
     ports:
-     - 9090:9090
+      - "${ADMIN_SERVER_PORT:-9090}:9090"
 
-  ## Grafana / Prometheus
-
-  grafana-server:
-    build: ./docker/grafana
-    container_name: grafana-server
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    ports:
-    - 3030:3000
-
-  prometheus-server:
-    build: ./docker/prometheus
-    container_name: prometheus-server
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-    ports:
-    - 9091:9090
+volumes:
+  mysql-petclinic-data:
