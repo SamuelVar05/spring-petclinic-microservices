@@ -1,8 +1,6 @@
 spring:
   application:
     name: api-gateway
-  config:
-    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888/}
   cloud:
     gateway:
       server:
@@ -45,9 +43,76 @@ spring:
                 - CircuitBreaker=name=genaiCircuitBreaker,fallbackUri=/fallback
   reactor:
     context-propagation: auto
+
+petclinic:
+  services:
+    customers:
+      url: ${CUSTOMERS_SERVICE_URL:http://customers-service}
+    visits:
+      url: ${VISITS_SERVICE_URL:http://visits-service}
+
 ---
 spring:
   config:
     activate:
-      on-profile: docker
+      on-profile: "!cloudrun"
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888/}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: "docker & !cloudrun"
     import: configserver:http://config-server:8888
+
+---
+spring:
+  config:
+    activate:
+      on-profile: cloudrun
+    import: "configserver:${CONFIG_SERVER_URL}"
+  cloud:
+    discovery:
+      enabled: false
+    loadbalancer:
+      enabled: false
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: vets-service
+              uri: ${VETS_SERVICE_URL:http://vets-service}
+              predicates:
+                - Path=/api/vet/**
+              filters:
+                - StripPrefix=2
+            - id: visits-service
+              uri: ${VISITS_SERVICE_URL}
+              predicates:
+                - Path=/api/visit/**
+              filters:
+                - StripPrefix=2
+            - id: customers-service
+              uri: ${CUSTOMERS_SERVICE_URL}
+              predicates:
+                - Path=/api/customer/**
+              filters:
+                - StripPrefix=2
+            - id: genai-service
+              uri: ${GENAI_SERVICE_URL:http://genai-service}
+              predicates:
+                - Path=/api/genai/**
+              filters:
+                - StripPrefix=2
+                - CircuitBreaker=name=genaiCircuitBreaker,fallbackUri=/fallback
+eureka:
+  client:
+    enabled: false
+petclinic:
+  services:
+    customers:
+      url: ${CUSTOMERS_SERVICE_URL}
+    visits:
+      url: ${VISITS_SERVICE_URL}
+server:
+  port: ${SERVER_PORT:${PORT:8080}}

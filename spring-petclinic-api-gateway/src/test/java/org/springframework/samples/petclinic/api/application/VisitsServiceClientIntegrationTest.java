@@ -26,8 +26,7 @@ class VisitsServiceClientIntegrationTest {
     @BeforeEach
     void setUp() {
         server = new MockWebServer();
-        visitsServiceClient = new VisitsServiceClient(WebClient.builder());
-        visitsServiceClient.setHostname(server.url("/").toString());
+        visitsServiceClient = new VisitsServiceClient(WebClient.builder(), server.url("/").toString());
     }
 
     @AfterEach
@@ -36,12 +35,13 @@ class VisitsServiceClientIntegrationTest {
     }
 
     @Test
-    void getVisitsForPets_withAvailableVisitsService() {
+    void getVisitsForPets_withAvailableVisitsService() throws InterruptedException {
         prepareResponse();
 
         Mono<Visits> visits = visitsServiceClient.getVisitsForPets(Collections.singletonList(1));
 
         assertVisitDescriptionEquals(visits.block(), PET_ID,"test visit");
+        assertEquals("/pets/visits?petId=1", server.takeRequest().getPath());
     }
 
 

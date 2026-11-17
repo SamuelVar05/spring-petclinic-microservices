@@ -25,6 +25,7 @@ import org.springframework.cloud.client.circuitbreaker.Customizer;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
@@ -51,13 +52,21 @@ public class ApiGatewayApplication {
 
     @Bean
     @LoadBalanced
+    @Profile("!cloudrun")
     RestTemplate loadBalancedRestTemplate() {
         return new RestTemplate();
     }
 
     @Bean
     @LoadBalanced
+    @Profile("!cloudrun")
     public WebClient.Builder loadBalancedWebClientBuilder() {
+        return WebClient.builder();
+    }
+
+    @Bean
+    @Profile("cloudrun")
+    public WebClient.Builder webClientBuilder() {
         return WebClient.builder();
     }
 
